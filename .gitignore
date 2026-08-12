@@ -1,0 +1,11 @@
+# 1. Data Lake y Archivos Pesados (Van a GitHub Releases)
+*.zip
+*.tar.gz
+
+chrome_profile/
+
+checkpoint.json
+*.log
+
+__pycache__/
+
