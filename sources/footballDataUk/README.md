@@ -17,10 +17,14 @@ A diferencia de las APIs que proveen IDs únicos, los CSVs de apuestas operan me
 
 ## Instrucciones de Uso
 
-1. Coloca tu archivo CSV en la ruta `/data/footballdatauk/ARG.csv`.
-2. Ejecuta el validador para asegurarte de que todos los equipos del CSV están mapeados en tu configuración:
+1. Asegúrate de tener el dataset histórico en `/data/footballdatauk/ARG.csv`.
+2. **Configuración de la Base de Datos:** Antes de ejecutar los scripts, abre los archivos `inyect_footballdata.py` y `check_names.py` y reemplaza el string de la variable `DB_URL` con las credenciales de tu servidor PostgreSQL local:
+   ```python
+   # Ejemplo de configuración en el código:
+   DB_URL = "postgresql://usuario:contraseña@localhost:5432/nombre_db"
+3. Ejecuta el validador para asegurarte de que todos los equipos del CSV están mapeados en tu configuración:
    ```bash
    python validator.py
-3. Si la validación es exitosa, corre el proceso de inyección:
+4. Si la validación es exitosa, corre el proceso de inyección:
     ```bash
     python inyect_footballdata.py

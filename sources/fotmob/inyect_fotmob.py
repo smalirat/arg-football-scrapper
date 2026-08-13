@@ -3,7 +3,9 @@ import os
 from pathlib import Path
 from sqlalchemy import create_engine, text
 
-DB_URL = "postgresql://postgres:admin@localhost:5432/Argstats"
+# Reemplazar con tus credenciales y nombre de la base de datos
+# Podes probar configurando un .env general y usando python-dotenv para cargarlo
+DB_URL = "postgresql://usuario:contraseña@localhost:5432/nombre_db"
 engine = create_engine(DB_URL)
 
 

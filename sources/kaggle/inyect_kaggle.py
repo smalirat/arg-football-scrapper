@@ -4,7 +4,9 @@ import os
 from pathlib import Path
 
 # 1. Conexión a la base de datos
-DB_URL = "postgresql://postgres:admin@localhost:5432/Argstats"
+# Reemplazar con tus credenciales y nombre de la base de datos
+# Podes probar configurando un .env general y usando python-dotenv para cargarlo
+DB_URL = "postgresql://usuario:contraseña@localhost:5432/nombre_db"
 engine = create_engine(DB_URL)
 
 def cargar_datos(file_path):
@@ -13,25 +15,12 @@ def cargar_datos(file_path):
         return
 
     df = pd.read_csv(file_path)
-    print(f"Procesando {len(df)} partidos...")
+    print(f"Procesando {len(df)} partidos históricos...")
 
-    # engine.begin() abre la conexión y maneja el COMMIT automáticamente al terminar el bloque
     with engine.begin() as conn:
         
-        # --- PASO 0: Crear tablas desde el script SQL ---
-        print("Verificando/Creando tablas iniciales...")
-        # Sube un nivel desde la carpeta del script (..) y entra a la carpeta del SQL
-        ruta_sql = Path(__file__).parent.parent / 'scripts-sql' / 'creacion-inicial.sql'
-        
-        if not ruta_sql.exists():
-            print(f"ERROR: No se encontró el archivo SQL en: {ruta_sql}")
-            return
-            
-        script_creacion = ruta_sql.read_text(encoding='utf-8')
-        conn.execute(text(script_creacion))
-        print("Tablas listas.")
-
-        # --- PASO 1: Cargar Equipos ---
+        # --- PASO 1: Cargar Equipos Históricos ---
+        # Solo inserta si no existen previamente (por ej, cargados por FotMob)
         print("Cargando equipos...")
         locales = df[['local_team_id', 'local_team']].rename(columns={'local_team_id': 'id', 'local_team': 'nombre'})
         visitantes = df[['visitor_team_id', 'visitor_team']].rename(columns={'visitor_team_id': 'id', 'visitor_team': 'nombre'})
@@ -48,7 +37,6 @@ def cargar_datos(file_path):
         print("Cargando torneos...")
         torneos = df['date_name'].unique()
         for torneo in torneos:
-            # Extraemos la última palabra del string como temporada (ej: "1931" de "Campeonato 1931")
             partes_nombre = str(torneo).split()
             temporada_aprox = partes_nombre[-1] if partes_nombre else "N/A"
             
@@ -64,8 +52,7 @@ def cargar_datos(file_path):
         map_torneos = {row[1]: row[0] for row in res}
 
         for idx, row in df.iterrows():
-            # Generamos un ID ficticio muy alto para la data histórica del CSV
-            # Así evitamos que colisione con los match_id de la API
+            # ID ficticio alto para evitar colisión con match_ids modernos de APIs[cite: 10, 11]
             fake_match_id = 9000000000 + idx 
             
             conn.execute(text("""
@@ -85,15 +72,13 @@ def cargar_datos(file_path):
                 "vis_g": row['visitor_result']
             })
 
-    # Si el código llega hasta aquí sin errores, SQLAlchemy hace el commit de todo automáticamente
     print("¡Carga completada con éxito!")
 
 if __name__ == "__main__":
-    # Obtiene la ruta de la carpeta donde está este script
     script_dir = os.path.dirname(os.path.abspath(__file__))
     
-    # Ruta dinámica: sube un nivel y entra a data/kaggle/liga_2023.csv
-    ruta_final = os.path.join(script_dir, '..', 'data', 'kaggle', 'liga_2023.csv')
+    # Ruta apuntando a la nueva estructura /data/kaggle/
+    ruta_final = os.path.join(script_dir, '..', '..', 'data', 'kaggle', 'liga_2023.csv')
     
-    print(f"Ruta generada: {os.path.abspath(ruta_final)}")
+    print(f"Ruta objetivo: {os.path.abspath(ruta_final)}")
     cargar_datos(ruta_final)

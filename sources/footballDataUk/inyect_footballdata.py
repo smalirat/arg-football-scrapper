@@ -10,7 +10,9 @@ logging.basicConfig(
     encoding='utf-8'
 )
 
-DB_URL = "postgresql://postgres:5432@localhost:5432/Argstats"
+# Reemplazar con tus credenciales y nombre de la base de datos
+# Podes probar configurando un .env general y usando python-dotenv para cargarlo
+DB_URL = "postgresql://usuario:contraseña@localhost:5432/nombre_db"
 engine = create_engine(DB_URL)
 
 def integrar():

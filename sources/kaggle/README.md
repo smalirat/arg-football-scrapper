@@ -14,8 +14,12 @@ La base de datos relacional utiliza como *Primary Key* los `partido_id` extraíd
 
 ## Instrucciones de Uso
 
-1. Asegúrate de tener el dataset histórico descomprimido en `/data/kaggle/liga_2023.csv`.
-2. Ejecuta el script de inyección:
+1. Asegúrate de tener el dataset histórico en `/data/kaggle/liga_2023.csv`.
+2. **Configuración de la Base de Datos:** Antes de ejecutar los scripts, abre los archivos `inyect_kaggle.py` y reemplaza el string de la variable `DB_URL` con las credenciales de tu servidor PostgreSQL local:
+   ```python
+   # Ejemplo de configuración en el código:
+   DB_URL = "postgresql://usuario:contraseña@localhost:5432/nombre_db"
+3. Ejecuta el script de inyección:
    ```bash
    python inyect_historical_csv.py
-3. El script utilizará el motor de SQLAlchemy dentro de un bloque transaccional (engine.begin()). Primero insertará los equipos únicos detectados, luego las temporadas/ediciones, y finalmente los miles de partidos históricos de forma segura.
+4. El script utilizará el motor de SQLAlchemy dentro de un bloque transaccional (engine.begin()). Primero insertará los equipos únicos detectados, luego las temporadas/ediciones, y finalmente los miles de partidos históricos de forma segura.

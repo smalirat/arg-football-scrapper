@@ -10,9 +10,8 @@ import nodriver as uc
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from configs.config import FOTMOB_CONFIG
 
-
-CHROME_PROFILE_PATH = r"D:\Argstats\chrome_profile"
-BASE_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "jsons", "fotmob"))
+CHROME_PROFILE_PATH = "./chrome_profile"
+BASE_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "fotmob"))
 CHECKPOINT_FILE = os.path.join(BASE_PATH, "checkpoint.json")
 
 async def obtener_json_seguro(page):
