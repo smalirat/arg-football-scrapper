@@ -1,9 +1,8 @@
-
 CREATE TABLE IF NOT EXISTS equipos (
     equipo_id BIGINT PRIMARY KEY,
     nombre_fuente VARCHAR(255) NOT NULL,
     nombre_corto VARCHAR(100),
-    es_fusion BOOLEAN DEFAULT FALSE
+    es_fusion BOOLEAN DEFAULT FALSE 
 );
 
 CREATE TABLE IF NOT EXISTS jugadores (
@@ -18,8 +17,8 @@ CREATE TABLE IF NOT EXISTS ediciones (
     UNIQUE (nombre_torneo, temporada)
 );
 
-
 CREATE TABLE IF NOT EXISTS posiciones (
+    posicion_id SERIAL, 
     edicion_id INT REFERENCES ediciones(edicion_id) ON DELETE CASCADE,
     equipo_id BIGINT REFERENCES equipos(equipo_id) ON DELETE CASCADE,
     zona VARCHAR(100),
@@ -38,12 +37,11 @@ CREATE TABLE IF NOT EXISTS posiciones (
 CREATE TABLE IF NOT EXISTS transferencias (
     transferencia_id SERIAL PRIMARY KEY,
     jugador_id BIGINT REFERENCES jugadores(jugador_id) ON DELETE CASCADE,
-    fecha VARCHAR(50), -- Se usa VARCHAR ya que las APIs suelen mandar formatos variables o incompletos
-    equipo_origen_id BIGINT REFERENCES equipos(equipo_id) ON DELETE SET NULL,
-    equipo_destino_id BIGINT REFERENCES equipos(equipo_id) ON DELETE SET NULL,
+    fecha VARCHAR(50), 
+    equipo_origen_id BIGINT, 
+    equipo_destino_id BIGINT, 
     tipo_transferencia VARCHAR(100)
 );
-
 
 CREATE TABLE IF NOT EXISTS partidos (
     partido_id BIGINT PRIMARY KEY, 
@@ -61,8 +59,8 @@ CREATE TABLE IF NOT EXISTS partidos (
     metadata JSONB 
 );
 
-
 CREATE TABLE IF NOT EXISTS stats_jugador_partido (
+    stat_id SERIAL,
     partido_id BIGINT REFERENCES partidos(partido_id) ON DELETE CASCADE,
     jugador_id BIGINT REFERENCES jugadores(jugador_id) ON DELETE CASCADE,
     equipo_id BIGINT REFERENCES equipos(equipo_id) ON DELETE CASCADE,
@@ -113,7 +111,7 @@ CREATE TABLE IF NOT EXISTS tiros (
 
 CREATE TABLE IF NOT EXISTS momentum (
     partido_id BIGINT REFERENCES partidos(partido_id) ON DELETE CASCADE,
-    minuto INT,
+    minuto NUMERIC(5,1), 
     valor NUMERIC(8,2),
     PRIMARY KEY (partido_id, minuto)
 );
