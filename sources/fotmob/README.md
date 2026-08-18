@@ -53,3 +53,5 @@ Si estás siguiendo una liga que se está jugando actualmente, no necesitas corr
 3. Ejecuta el actualizador:
    ```bash
    python sources/fotmob/fotmob_updater.py
+
+El script leerá el listado actual de partidos de esa liga y descargará únicamente los JSONs de los encuentros que falten en  local, saltando los que ya existen para ahorrar ancho de banda y tiempo.
