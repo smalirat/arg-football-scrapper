@@ -9,3 +9,8 @@ checkpoint.json
 
 __pycache__/
 
+
+# Secretos
+.env
+.env.*
+!.env.example

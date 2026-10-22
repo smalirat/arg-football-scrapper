@@ -31,9 +31,9 @@ Para almacenar la información recolectada, el sistema utiliza una base de datos
 1. Crea una base de datos vacía en tu gestor preferido (ej. pgAdmin, DBeaver, DataGrip) o mediante la línea de comandos.
 2. Ejecuta el script de creación inicial para construir las tablas y el esquema relacional:
    ```bash
-   psql -U tu_usuario -d nombre_de_tu_db -f scripts-sql/creacion-inicial.sql
+   psql -U tu_usuario -d nombre_de_tu_db -f scripts-sql/creacion_inicial.sql
 
-(Nota: Si deseas migrar a otro motor de base de datos como MySQL o MariaDB, deberás modificar la cadena de conexión de SQLAlchemy por la correspondiente a tu gestor, y adaptar ligeramente el archivo creacion-inicial.sql, especialmente los campos nativos de Postgres como JSONB).
+(Nota: Si deseas migrar a otro motor de base de datos como MySQL o MariaDB, deberás modificar la cadena de conexión de SQLAlchemy por la correspondiente a tu gestor, y adaptar ligeramente el archivo creacion_inicial.sql, especialmente los campos nativos de Postgres como JSONB).
 
 ### Documentación por Fuente (Módulos)
 El grueso de la lógica de extracción de este proyecto hoy en día se encuentra en la integración con FotMob, pero el sistema soporta de forma modular a otros proveedores. Podés consultar las instrucciones de ejecución detalladas, prerrequisitos y particularidades de cada módulo en sus respectivos manuales:

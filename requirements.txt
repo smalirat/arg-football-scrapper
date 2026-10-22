@@ -1,0 +1,6 @@
+# Python 3.13 (nodriver todavía no funciona con 3.14)
+pandas==3.1.0
+# SQLAlchemy 2.0: la 2.1 usa por defecto el driver psycopg 3 para postgresql://
+SQLAlchemy==2.0.43
+psycopg2-binary==2.9.13
+nodriver==0.50.3

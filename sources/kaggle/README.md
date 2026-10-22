@@ -4,7 +4,7 @@ Este módulo está dedicado a la carga masiva de la historia del fútbol argenti
 
 ## Archivos del Módulo
 
-* `inyect_historical_csv.py`: Script ETL de carga. Lee el archivo CSV, normaliza las competiciones, registra los equipos y carga los resultados.
+* `inyect_kaggle.py`: Script ETL de carga. Lee el archivo CSV, normaliza las competiciones, registra los equipos y carga los resultados.
 
 ## Desafío Técnico: Colisión de IDs
 
@@ -15,11 +15,11 @@ La base de datos relacional utiliza como *Primary Key* los `partido_id` extraíd
 ## Instrucciones de Uso
 
 1. Asegúrate de tener el dataset histórico en `/data/kaggle/liga_2023.csv`.
-2. **Configuración de la Base de Datos:** Antes de ejecutar los scripts, abre los archivos `inyect_kaggle.py` y reemplaza el string de la variable `DB_URL` con las credenciales de tu servidor PostgreSQL local:
-   ```python
-   # Ejemplo de configuración en el código:
-   DB_URL = "postgresql://usuario:contraseña@localhost:5432/nombre_db"
+2. **Configuración de la Base de Datos:** definí la variable de entorno `ARGSTATS_DB_URL` con la connection string de tu PostgreSQL (ver `.env.example`):
+   ```powershell
+   $env:ARGSTATS_DB_URL = "postgresql://usuario:contraseña@localhost:5432/nombre_db"
+   ```
 3. Ejecuta el script de inyección:
    ```bash
-   python inyect_historical_csv.py
+   python sources/kaggle/inyect_kaggle.py
 4. El script utilizará el motor de SQLAlchemy dentro de un bloque transaccional (engine.begin()). Primero insertará los equipos únicos detectados, luego las temporadas/ediciones, y finalmente los miles de partidos históricos de forma segura.

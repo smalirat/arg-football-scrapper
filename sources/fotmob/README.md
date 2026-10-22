@@ -27,10 +27,10 @@ La columna `metadata` (tipo `JSONB`) en la base de datos relacional almacena el 
 
 ### Primer uso y Generación de Sesión:
 
-1. **Configuración de la Base de Datos:** Antes de ejecutar los scripts, abre los archivos `inyect_footballdata.py` y `check_names.py` y reemplaza el string de la variable `DB_URL` con las credenciales de tu servidor PostgreSQL local:
-   ```python
-   # Ejemplo de configuración en el código:
-   DB_URL = "postgresql://usuario:contraseña@localhost:5432/nombre_db"
+1. **Configuración de la Base de Datos:** definí la variable de entorno `ARGSTATS_DB_URL` con la connection string de tu PostgreSQL (ver `.env.example`):
+   ```powershell
+   $env:ARGSTATS_DB_URL = "postgresql://usuario:contraseña@localhost:5432/nombre_db"
+   ```
 2. Asegurate de crear una carpeta vacía llamada `chrome_profile` en la raíz del proyecto.
 3. Ejecutá `python fotmob_scraper.py`.
 4. Si el script se detiene indicando un bloqueo, ve a la ventana de Chrome que se abrió, resuelve el Captcha humano y presiona `ENTER` en tu consola.

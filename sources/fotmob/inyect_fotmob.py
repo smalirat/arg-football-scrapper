@@ -1,11 +1,12 @@
+import html
 import json
 import os
+import re
 from pathlib import Path
 from sqlalchemy import create_engine, text
 
-# Reemplazar con tus credenciales y nombre de la base de datos
-# Podes probar configurando un .env general y usando python-dotenv para cargarlo
-DB_URL = "postgresql://usuario:contraseña@localhost:5432/nombre_db"
+# Connection string en la variable de entorno ARGSTATS_DB_URL (ver .env.example)
+DB_URL = os.getenv("ARGSTATS_DB_URL", "postgresql://usuario:contraseña@localhost:5432/nombre_db")
 engine = create_engine(DB_URL)
 
 
@@ -53,6 +54,59 @@ def extraer_nombre(obj_name):
     return str(obj_name) if obj_name else 'Desconocido'
 
 
+# --- Nombres de edición ---------------------------------------------------
+# La base usa edición = competición/etapa + temporada, con el nombre sin año
+# (ej. "Liga Profesional Clausura" · "2026"). FotMob cambió de formato con el
+# tiempo, así que se normaliza al formato de la base.
+
+ALIAS_LIGA = {"Primera B Nacional": "Primera Nacional"}
+
+def ronda_playoff(texto):
+    """'8th Finals' -> '1/8', 'Quarter-finals' -> '1/4', 'Semi-finals' -> '1/2', 'Final' -> 'final'"""
+    texto = texto.strip().lower()
+    m = re.fullmatch(r"(\d+)(st|nd|rd|th) finals", texto)
+    if m:
+        return f"1/{m.group(1)}"
+    return {"quarter-finals": "1/4", "semi-finals": "1/2", "final": "final"}.get(texto)
+
+def normalizar_ronda(ronda):
+    """'Clausura - Round 13' -> ('Clausura', '13', False); 'Apertura - 8th Finals' -> ('Apertura', '1/8', True)"""
+    ronda = str(ronda) if ronda is not None else 'N/A'
+    m = re.fullmatch(r"\s*(.+?)\s+-\s+(.+?)\s*", ronda)
+    if not m:
+        return None, ronda, False
+    etapa, resto = m.group(1), m.group(2)
+    numero = re.fullmatch(r"Round\s+(\d+)", resto)
+    if numero:
+        return etapa, numero.group(1), False
+    playoff = ronda_playoff(resto)
+    if playoff:
+        return etapa, playoff, True
+    return etapa, resto, False
+
+def normalizar_torneo(nombre, etapa, es_playoff=False):
+    """'Liga Profesional Argentina' + 'Clausura' -> 'Liga Profesional Clausura' (+ ' Playoff' si corresponde)"""
+    if etapa and etapa.lower() not in nombre.lower():
+        nombre = f"{nombre.removesuffix(' Argentina')} {etapa}"
+    if es_playoff and 'playoff' not in nombre.lower():
+        nombre = f"{nombre} Playoff"
+    return nombre
+
+def edicion_de_tabla(liga, tabla):
+    """(edición, zona) de una tabla de posiciones: 'Clausura Group A' -> ('<liga> Clausura', 'Group A')"""
+    liga = ALIAS_LIGA.get(liga, liga)
+    tabla = re.sub(r"\s+", " ", tabla).strip() if tabla else None
+    if not tabla:
+        return liga, None
+    etapa = re.fullmatch(r"(Apertura|Clausura)\s*(?:-\s*)?(.+)", tabla)
+    if etapa:
+        return normalizar_torneo(liga, etapa.group(1)), etapa.group(2)
+    # Una zona suelta pertenece a la liga; cualquier otro nombre es su propia competición
+    if re.fullmatch(r"(Zona|Group|Grupo)\s+\S+", tabla):
+        return liga, tabla
+    return tabla, None
+
+
 
 
 def procesar_ligas(conn, carpeta_leagues):
@@ -65,15 +119,16 @@ def procesar_ligas(conn, carpeta_leagues):
             detalles = data.get('details') or {}
             if not detalles:
                 continue
-            torneo = detalles.get('name')
+            torneo = html.unescape(detalles.get('name') or 'Desconocido')
             temporada = detalles.get('selectedSeason')
-            edicion_id = upsert_edicion(conn, torneo, temporada)
             tables_data = data.get('table') or []
             if tables_data and isinstance(tables_data, list) and tables_data[0].get('data'):
                 t_data = tables_data[0]['data']
                 zonas = t_data.get('tables') if 'tables' in t_data else [{'leagueName': None, 'table': t_data.get('table', {})}]
                 for zona in zonas:
-                    nombre_zona = zona.get('leagueName')
+                    # Cada tabla va a la edición de su etapa, igual que los partidos
+                    nombre_edicion, nombre_zona = edicion_de_tabla(torneo, zona.get('leagueName'))
+                    edicion_id = upsert_edicion(conn, nombre_edicion, temporada)
                     equipos_zona = (zona.get('table') or {}).get('all', [])
                     for equipo in equipos_zona:
                         eq_id = equipo.get('id')
@@ -120,17 +175,6 @@ def procesar_ligas(conn, carpeta_leagues):
                         "dest": t.get('toClubId'),
                         "tipo": t.get('transferType', {}).get('text')
                     })
-                    upsert_jugador(conn, j_id, t.get('name', 'Desconocido'))
-                    conn.execute(text("""
-                        INSERT INTO transferencias (jugador_id, fecha, equipo_origen_id, equipo_destino_id, tipo_transferencia)
-                        VALUES (:jid, :fecha, :ori, :dest, :tipo)
-                    """), {
-                        "jid": j_id,
-                        "fecha": t.get('transferDate'),
-                        "ori": t.get('fromClubId'),
-                        "dest": t.get('toClubId'),
-                        "tipo": t.get('transferType', {}).get('text')
-                    })
 
 
 
@@ -152,7 +196,8 @@ def procesar_partidos(conn, carpeta_matches):
             partido_id = int(gen['matchId'])
             fecha = gen.get('matchTimeUTCDate')
             año = fecha[:4] if fecha else "Desc"
-            torneo = gen.get('leagueName', 'Desconocido')
+            etapa, ronda, es_playoff = normalizar_ronda(gen.get('matchRound', 'N/A'))
+            torneo = normalizar_torneo(gen.get('leagueName', 'Desconocido'), etapa, es_playoff)
             edicion_id = upsert_edicion(conn, torneo, año)
             loc_id = head['teams'][0]['id']
             vis_id = head['teams'][1]['id']
@@ -177,7 +222,7 @@ def procesar_partidos(conn, carpeta_matches):
                     penales_local = EXCLUDED.penales_local, penales_visitante = EXCLUDED.penales_visitante
             """), {
                 "p_id": partido_id, "ed_id": edicion_id, "loc": loc_id, "vis": vis_id,
-                "fecha": fecha, "ronda": gen.get('matchRound', 'N/A'), "gl": goles_loc, "gv": goles_vis,
+                "fecha": fecha, "ronda": ronda, "gl": goles_loc, "gv": goles_vis,
                 "pl": penales_loc, "pv": penales_vis, "est": status.get('reason', {}).get('short', 'N/A'),
                 "meta": metadata_json
             })
@@ -210,29 +255,31 @@ def procesar_partidos(conn, carpeta_matches):
                     "tr": obtener_stat(p_data, 'discipline', 'red_cards', 0) > 0
                 })
 
+            # (equipo_id, jugador, es_titular). FotMob tiene dos formatos de lineup:
+            # el viejo (lineup.lineup[].players/bench) y el actual (homeTeam/awayTeam con starters/subs).
             lineups = content.get('lineup') or {}
+            jugadores_lineup = []
             for team in lineups.get('lineup', []):
                 t_id = team.get('teamId')
                 for row in team.get('players', []):
-                    for p in row:
-                        j_id = p.get('id')
-                        if not j_id: continue
-                        upsert_jugador(conn, j_id, extraer_nombre(p.get('name')))
-                        conn.execute(text("""
-                            INSERT INTO alineaciones (partido_id, equipo_id, jugador_id, es_titular, dorsal, posicion)
-                            VALUES (:pid, :eqid, :jid, TRUE, :dorsal, :pos)
-                            ON CONFLICT (partido_id, jugador_id) DO NOTHING
-                        """), {"pid": partido_id, "eqid": t_id, "jid": j_id, "dorsal": p.get('shirtNumber'), "pos": p.get('role')})
+                    jugadores_lineup += [(t_id, p, True) for p in row]
+                jugadores_lineup += [(t_id, p, False) for p in team.get('bench', [])]
+            for team_key in ('homeTeam', 'awayTeam'):
+                team = lineups.get(team_key) or {}
+                jugadores_lineup += [(team.get('id'), p, True) for p in team.get('starters') or []]
+                jugadores_lineup += [(team.get('id'), p, False) for p in team.get('subs') or []]
 
-                for p in team.get('bench', []):
-                    j_id = p.get('id')
-                    if not j_id: continue
-                    upsert_jugador(conn, j_id, extraer_nombre(p.get('name')))
-                    conn.execute(text("""
-                        INSERT INTO alineaciones (partido_id, equipo_id, jugador_id, es_titular, dorsal, posicion)
-                        VALUES (:pid, :eqid, :jid, FALSE, :dorsal, :pos)
-                        ON CONFLICT (partido_id, jugador_id) DO NOTHING
-                    """), {"pid": partido_id, "eqid": t_id, "jid": j_id, "dorsal": p.get('shirtNumber'), "pos": p.get('role')})
+            for t_id, p, es_titular in jugadores_lineup:
+                j_id = p.get('id')
+                if not j_id: continue
+                posicion = p.get('role') or p.get('positionId')
+                upsert_jugador(conn, j_id, extraer_nombre(p.get('name')))
+                conn.execute(text("""
+                    INSERT INTO alineaciones (partido_id, equipo_id, jugador_id, es_titular, dorsal, posicion)
+                    VALUES (:pid, :eqid, :jid, :tit, :dorsal, :pos)
+                    ON CONFLICT (partido_id, jugador_id) DO NOTHING
+                """), {"pid": partido_id, "eqid": t_id, "jid": j_id, "tit": es_titular, "dorsal": p.get('shirtNumber'),
+                       "pos": str(posicion) if posicion is not None else None})
 
             eventos = match_facts.get('events', {}).get('events', []) if isinstance(match_facts.get('events'), dict) else []
             for ev in eventos:
@@ -279,9 +326,10 @@ def procesar_partidos(conn, carpeta_matches):
 
 
 if __name__ == "__main__":
-    raiz = Path(__file__).parent.parent.parent.parent
-    carpeta_leagues = raiz / "jsons" / "fotmob" / "leagues"
-    carpeta_matches = raiz / "jsons" / "fotmob" / "matches"
+    # Misma carpeta donde guarda fotmob_scraper.py: <repo>/data/fotmob
+    raiz = Path(__file__).resolve().parents[2]
+    carpeta_leagues = raiz / "data" / "fotmob" / "leagues"
+    carpeta_matches = raiz / "data" / "fotmob" / "matches"
     with engine.begin() as conn:
         print("--- Iniciando proceso de carga de Big Data ---")
         if carpeta_leagues.exists():

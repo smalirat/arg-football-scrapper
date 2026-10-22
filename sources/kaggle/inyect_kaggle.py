@@ -4,10 +4,22 @@ import os
 from pathlib import Path
 
 # 1. Conexión a la base de datos
-# Reemplazar con tus credenciales y nombre de la base de datos
-# Podes probar configurando un .env general y usando python-dotenv para cargarlo
-DB_URL = "postgresql://usuario:contraseña@localhost:5432/nombre_db"
+# Connection string en la variable de entorno ARGSTATS_DB_URL (ver .env.example)
+DB_URL = os.getenv("ARGSTATS_DB_URL", "postgresql://usuario:contraseña@localhost:5432/nombre_db")
 engine = create_engine(DB_URL)
+
+# Nombres que el CSV escribe distinto que el resto de la base
+ALIAS_TORNEO = {"Copa de la Liga": "Copa de la Liga Profesional"}
+
+def edicion_de_torneo(nombre_csv):
+    """
+    "Campeonato 1931" -> ("Campeonato", "1931"). En la base el nombre de la
+    edición no lleva el año: va en la temporada.
+    """
+    partes = " ".join(str(nombre_csv).split()).split(" ")
+    temporada = partes[-1] if partes else "N/A"
+    nombre = " ".join(partes[:-1]) or str(nombre_csv).strip()
+    return ALIAS_TORNEO.get(nombre, nombre), temporada
 
 def cargar_datos(file_path):
     if not os.path.exists(file_path):
@@ -36,20 +48,19 @@ def cargar_datos(file_path):
        # --- PASO 2: Cargar Ediciones (Torneos) ---
         print("Cargando torneos...")
         torneos = df['date_name'].unique()
+        map_torneos = {}
         for torneo in torneos:
-            partes_nombre = str(torneo).split()
-            temporada_aprox = partes_nombre[-1] if partes_nombre else "N/A"
-            
-            conn.execute(text("""
+            nombre, temporada = edicion_de_torneo(torneo)
+
+            map_torneos[torneo] = conn.execute(text("""
                 INSERT INTO ediciones (nombre_torneo, temporada)
                 VALUES (:nombre, :temporada)
-                ON CONFLICT (nombre_torneo, temporada) DO NOTHING
-            """), {"nombre": torneo, "temporada": temporada_aprox})
+                ON CONFLICT (nombre_torneo, temporada) DO UPDATE SET nombre_torneo = EXCLUDED.nombre_torneo
+                RETURNING edicion_id
+            """), {"nombre": nombre, "temporada": temporada}).scalar()
 
         # --- PASO 3: Cargar Partidos ---
         print("Insertando partidos...")
-        res = conn.execute(text("SELECT edicion_id, nombre_torneo FROM ediciones"))
-        map_torneos = {row[1]: row[0] for row in res}
 
         for idx, row in df.iterrows():
             # ID ficticio alto para evitar colisión con match_ids modernos de APIs[cite: 10, 11]
