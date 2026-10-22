@@ -1,9 +1,12 @@
 import pandas as pd
 
-# MAPEO_EQUIPOS: nombre en el CSV de Football-Data -> IDs del equipo en la base.
-# Cada equipo tiene dos IDs porque los partidos vienen de dos fuentes:
-#   kaggle: partidos históricos (hasta 2023), cargados desde el CSV de Kaggle
-#   fotmob: partidos desde 2024, cargados desde FotMob
+from configs.equipos_kaggle import equipo_id
+
+# MAPEO_EQUIPOS: nombre en el CSV de Football-Data -> IDs del equipo en las fuentes.
+#   kaggle: ID del CSV de Kaggle (partidos históricos, hasta 2023)
+#   fotmob: ID de FotMob (partidos desde 2024)
+# En la base cada club tiene un solo ID: el de Kaggle se traduce al de FotMob
+# con configs/equipos_kaggle.py (ver ids_equipo).
 # Los IDs de FotMob se verificaron cruzando las filas de 2024/2026 con los
 # partidos de la base por fecha y resultado (todos los cruces coincidieron).
 # None = el equipo no tiene partidos de esa fuente en primera.
@@ -60,9 +63,10 @@ PREFIJOS_EDICION = ('Liga Profesional', 'Copa de la Liga Profesional')
 
 
 def ids_equipo(nombre_csv):
-    """Todos los equipo_id posibles de un nombre del CSV (Kaggle y/o FotMob)."""
+    """equipo_id en la base de un nombre del CSV (el de Kaggle, traducido al de FotMob)."""
     ids = MAPEO_EQUIPOS.get(nombre_csv) or {}
-    return {i for i in ids.values() if i is not None}
+    kaggle, fotmob = ids.get('kaggle'), ids.get('fotmob')
+    return {i for i in (equipo_id(kaggle) if kaggle is not None else None, fotmob) if i is not None}
 
 
 def clean_nan(val):

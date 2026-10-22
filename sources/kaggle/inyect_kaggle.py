@@ -1,7 +1,11 @@
 import pandas as pd
 from sqlalchemy import create_engine, text
 import os
+import sys
 from pathlib import Path
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+from configs.equipos_kaggle import equipo_id
 
 # 1. Conexión a la base de datos
 # Connection string en la variable de entorno ARGSTATS_DB_URL (ver .env.example)
@@ -32,8 +36,11 @@ def cargar_datos(file_path):
     with engine.begin() as conn:
         
         # --- PASO 1: Cargar Equipos Históricos ---
-        # Solo inserta si no existen previamente (por ej, cargados por FotMob)
+        # Los IDs del CSV se traducen a los de FotMob (configs/equipos_kaggle.py)
+        # para no duplicar clubes. Solo inserta si no existen (por ej, cargados por FotMob)
         print("Cargando equipos...")
+        df['local_team_id'] = df['local_team_id'].map(equipo_id)
+        df['visitor_team_id'] = df['visitor_team_id'].map(equipo_id)
         locales = df[['local_team_id', 'local_team']].rename(columns={'local_team_id': 'id', 'local_team': 'nombre'})
         visitantes = df[['visitor_team_id', 'visitor_team']].rename(columns={'visitor_team_id': 'id', 'visitor_team': 'nombre'})
         equipos_unicos = pd.concat([locales, visitantes]).drop_duplicates('id')

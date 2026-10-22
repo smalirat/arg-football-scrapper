@@ -12,6 +12,12 @@ La base de datos relacional utiliza como *Primary Key* los `partido_id` extraíd
 
 **La solución:** El script inyecta los partidos históricos generando identificadores ficticios en un rango reservado e inalcanzable por las APIs comerciales modernas (ej. `9000000000 + índice de fila`).
 
+## IDs de equipos: uno solo por club
+
+El CSV numera los equipos del 0 al 95, y FotMob usa sus propios IDs para los mismos clubes. Si se cargaran los dos tal cual, cada club quedaría duplicado (Boca con el ID 17 del CSV y con el 10077 de FotMob).
+
+Por eso el script traduce cada ID del CSV al de FotMob antes de escribir, con la tabla de `configs/equipos_kaggle.py`. Los clubes que FotMob no tiene (Mandiyú, Loma Negra, etc.) se cargan con su ID del CSV. La misma tabla la usa `sources/footballDataUk` para cruzar las cuotas con los partidos históricos.
+
 ## Instrucciones de Uso
 
 1. Asegúrate de tener el dataset histórico en `/data/kaggle/liga_2023.csv`.
