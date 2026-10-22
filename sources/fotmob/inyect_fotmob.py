@@ -285,7 +285,8 @@ def procesar_partidos(conn, carpeta_matches):
             for ev in eventos:
                 ev_id = ev.get('eventId')
                 if not ev_id: continue 
-                j_id = (ev.get('player') or {}).get('id')
+                # FotMob manda id 0 cuando no sabe quién fue (pasa en el ascenso): queda en NULL
+                j_id = (ev.get('player') or {}).get('id') or None
                 if j_id: upsert_jugador(conn, j_id, extraer_nombre((ev.get('player') or {}).get('name')))
                 conn.execute(text("""
                     INSERT INTO eventos (evento_id, partido_id, equipo_id, jugador_id, minuto, tipo_evento, detalle)
@@ -303,7 +304,7 @@ def procesar_partidos(conn, carpeta_matches):
             for t in tiros:
                 t_id = t.get('id')
                 if not t_id: continue
-                j_id = t.get('playerId')
+                j_id = t.get('playerId') or None
                 if j_id: upsert_jugador(conn, j_id, t.get('playerName', 'Desc'))
                 conn.execute(text("""
                     INSERT INTO tiros (tiro_id, partido_id, equipo_id, jugador_id, minuto, x, y, xg, xgot, tipo_tiro, resultado)
