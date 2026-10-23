@@ -210,7 +210,8 @@ def normalizar_ronda(ronda):
     ronda = str(ronda) if ronda is not None else 'N/A'
     m = re.fullmatch(r"\s*(.+?)\s+-\s+(.+?)\s*", ronda)
     if not m:
-        return None, ronda, False
+        # Sin etapa (copas): las rondas eliminatorias en el mismo formato ('16th Finals' -> '1/16')
+        return None, ronda_playoff(ronda) or ronda, False
     etapa, resto = m.group(1), m.group(2)
     numero = re.fullmatch(r"Round\s+(\d+)", resto)
     if numero:
@@ -333,7 +334,11 @@ def procesar_partidos(conn, carpeta_matches):
             fecha = gen.get('matchTimeUTCDate')
             año = fecha[:4] if fecha else "Desc"
             etapa, ronda, es_playoff = normalizar_ronda(gen.get('matchRound', 'N/A'))
-            torneo = normalizar_torneo(gen.get('leagueName', 'Desconocido'), etapa, es_playoff)
+            # Copa Argentina 2024 y 2025 llegan como sub-liga "Cup" (parentLeagueId 9305)
+            nombre_liga = gen.get('leagueName') or 'Desconocido'
+            if nombre_liga == 'Cup' and gen.get('parentLeagueId') == 9305:
+                nombre_liga = 'Copa Argentina'
+            torneo = normalizar_torneo(nombre_liga, etapa, es_playoff)
             edicion_id = upsert_edicion(conn, torneo, año)
             loc_id = head['teams'][0]['id']
             vis_id = head['teams'][1]['id']
