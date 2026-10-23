@@ -396,13 +396,18 @@ def procesar_partidos(conn, carpeta_matches):
                 j_id = p.get('id')
                 if not j_id: continue
                 posicion = p.get('role') or p.get('positionId')
+                # Minuto de entrada/salida según performance.substitutionEvents
+                cambios = (p.get('performance') or {}).get('substitutionEvents') or []
+                entrada = next((c.get('time') for c in cambios if c.get('type') == 'subIn'), None)
+                salida = next((c.get('time') for c in cambios if c.get('type') == 'subOut'), None)
                 upsert_jugador(conn, j_id, extraer_nombre(p.get('name')))
                 conn.execute(text("""
-                    INSERT INTO alineaciones (partido_id, equipo_id, jugador_id, es_titular, dorsal, posicion)
-                    VALUES (:pid, :eqid, :jid, :tit, :dorsal, :pos)
-                    ON CONFLICT (partido_id, jugador_id) DO NOTHING
+                    INSERT INTO alineaciones (partido_id, equipo_id, jugador_id, es_titular, dorsal, posicion, minuto_entrada, minuto_salida)
+                    VALUES (:pid, :eqid, :jid, :tit, :dorsal, :pos, :ent, :sal)
+                    ON CONFLICT (partido_id, jugador_id) DO UPDATE SET
+                        minuto_entrada = EXCLUDED.minuto_entrada, minuto_salida = EXCLUDED.minuto_salida
                 """), {"pid": partido_id, "eqid": t_id, "jid": j_id, "tit": es_titular, "dorsal": p.get('shirtNumber'),
-                       "pos": str(posicion) if posicion is not None else None})
+                       "pos": str(posicion) if posicion is not None else None, "ent": entrada, "sal": salida})
 
             # Desde el Clausura 2026 FotMob manda eventId 0 en goles y tarjetas: se les
             # da un ID negativo estable por partido (no choca con los de FotMob) y se
@@ -419,16 +424,17 @@ def procesar_partidos(conn, carpeta_matches):
                 j_id = (ev.get('player') or {}).get('id') or None
                 if j_id: upsert_jugador(conn, j_id, extraer_nombre((ev.get('player') or {}).get('name')))
                 conn.execute(text("""
-                    INSERT INTO eventos (evento_id, partido_id, equipo_id, jugador_id, minuto, tipo_evento, detalle)
-                    VALUES (:evid, :pid, :eqid, :jid, :min, :tipo, :det)
-                    ON CONFLICT (evento_id) DO NOTHING
+                    INSERT INTO eventos (evento_id, partido_id, equipo_id, jugador_id, minuto, tipo_evento, detalle, asistencia_jugador_id)
+                    VALUES (:evid, :pid, :eqid, :jid, :min, :tipo, :det, :asis)
+                    ON CONFLICT (evento_id) DO UPDATE SET asistencia_jugador_id = EXCLUDED.asistencia_jugador_id
                 """), {
                     "evid": ev_id, "pid": partido_id,
                     "eqid": loc_id if ev.get('isHome') else vis_id,
                     "jid": j_id, "min": ev.get('time'),
                     "tipo": ev.get('type'),
                     # En el formato nuevo el gol en contra viene aparte (ownGoal), no en goalDescription
-                    "det": ev.get('card') or ev.get('goalDescription') or ('Own goal' if ev.get('ownGoal') in (True, 'True', 'true') else None)
+                    "det": ev.get('card') or ev.get('goalDescription') or ('Own goal' if ev.get('ownGoal') in (True, 'True', 'true') else None),
+                    "asis": int(ev['assistPlayerId']) if ev.get('type') == 'Goal' and ev.get('assistPlayerId') else None,
                 })
 
             tiros = (content.get('shotmap') or {}).get('shots', [])
