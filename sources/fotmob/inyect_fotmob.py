@@ -335,9 +335,12 @@ def procesar_partidos(conn, carpeta_matches):
             año = fecha[:4] if fecha else "Desc"
             etapa, ronda, es_playoff = normalizar_ronda(gen.get('matchRound', 'N/A'))
             # Copa Argentina 2024 y 2025 llegan como sub-liga "Cup" (parentLeagueId 9305)
+            # y la Supercopa Argentina (liga 9381) con el nombre en inglés, "Super Cup"
             nombre_liga = gen.get('leagueName') or 'Desconocido'
             if nombre_liga == 'Cup' and gen.get('parentLeagueId') == 9305:
                 nombre_liga = 'Copa Argentina'
+            elif gen.get('leagueId') == 9381:
+                nombre_liga = 'Supercopa Argentina'
             torneo = normalizar_torneo(nombre_liga, etapa, es_playoff)
             edicion_id = upsert_edicion(conn, torneo, año)
             loc_id = head['teams'][0]['id']
