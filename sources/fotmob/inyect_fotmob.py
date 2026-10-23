@@ -38,14 +38,150 @@ def upsert_edicion(conn, torneo, temporada):
     """), {"torneo": torneo, "temp": temporada})
     return res.scalar()
 
-def obtener_stat(player_data, category_key, target_stat_key, default=0):
+# --- Estadísticas de jugador ------------------------------------------------
+# Columnas de stats_jugador_partido que salen de playerStats: (columna, clave
+# de FotMob, "value" o "total" en las fracciones). Son las métricas que también
+# publican otras fuentes; lo propio de FotMob va a la columna `fotmob`.
+COLUMNAS_STATS = [
+    ('tiros_al_arco', 'ShotsOnTarget', 'value'),
+    ('tiros_bloqueados', 'blocked_shots', 'value'),
+    ('tiros_al_palo', 'shots_woodwork', 'value'),
+    ('xgot', 'expected_goals_on_target_variant', 'value'),
+    ('npxg', 'expected_goals_non_penalty', 'value'),
+    ('grandes_ocasiones_falladas', 'big_chance_missed_title', 'value'),
+    ('pases_precisos', 'accurate_passes', 'value'),
+    ('pases_intentados', 'accurate_passes', 'total'),
+    ('pases_ultimo_tercio', 'passes_into_final_third', 'value'),
+    ('pases_largos_precisos', 'long_balls_accurate', 'value'),
+    ('pases_largos_intentados', 'long_balls_accurate', 'total'),
+    ('centros_precisos', 'accurate_crosses', 'value'),
+    ('centros_intentados', 'accurate_crosses', 'total'),
+    ('ocasiones_creadas', 'chances_created', 'value'),
+    ('grandes_ocasiones_creadas', 'big_chance_created_team_title', 'value'),
+    ('toques', 'touches', 'value'),
+    ('toques_area_rival', 'touches_opp_box', 'value'),
+    ('regates_exitosos', 'dribbles_succeeded', 'value'),
+    ('regates_intentados', 'dribbles_succeeded', 'total'),
+    ('perdidas', 'dispossessed', 'value'),
+    ('offsides', 'Offsides', 'value'),
+    ('entradas', 'matchstats.headers.tackles', 'value'),
+    ('intercepciones', 'interceptions', 'value'),
+    ('despejes', 'clearances', 'value'),
+    ('bloqueos', 'shot_blocks', 'value'),
+    ('recuperaciones', 'recoveries', 'value'),
+    ('regateado', 'dribbled_past', 'value'),
+    ('duelos_ganados', 'duel_won', 'value'),
+    ('duelos_perdidos', 'duel_lost', 'value'),
+    ('duelos_terrestres_ganados', 'ground_duels_won', 'value'),
+    ('duelos_terrestres_intentados', 'ground_duels_won', 'total'),
+    ('duelos_aereos_ganados', 'aerials_won', 'value'),
+    ('duelos_aereos_intentados', 'aerials_won', 'total'),
+    ('faltas_cometidas', 'fouls', 'value'),
+    ('faltas_recibidas', 'was_fouled', 'value'),
+    ('penales_ganados', 'penalties_won', 'value'),
+    ('penales_cometidos', 'conceded_penalties', 'value'),
+    ('penales_errados', 'missed_penalty', 'value'),
+    ('errores_gol', 'errors_led_to_goal', 'value'),
+    ('goles_en_contra', 'owngoal', 'value'),
+]
+# Solo de arqueros: en el resto quedan en NULL (no aplica)
+COLUMNAS_ARQUERO = [
+    ('atajadas', 'saves', 'value'),
+    ('goles_recibidos', 'goals_conceded', 'value'),
+    ('xgot_recibido', 'expected_goals_on_target_faced', 'value'),
+    ('penales_atajados', 'saved_penalties', 'value'),
+]
+# Claves con columna propia o que se calculan con otras: no se repiten en `fotmob`
+CLAVES_CON_COLUMNA = {
+    'minutes_played', 'rating_title', 'goals', 'assists', 'expected_goals', 'expected_assists',
+    'total_shots', 'ShotsOffTarget',
+    *(k for _, k, _ in COLUMNAS_STATS), *(k for _, k, _ in COLUMNAS_ARQUERO),
+}
+CLAVES_DERIVADAS = {'xg_and_xa', 'shot_accuracy', 'goals_prevented', None}
+
+
+def stats_por_clave(player_data):
+    """Todas las estadísticas de un jugador por su clave de FotMob (la primera vez que aparece)."""
+    stats = {}
     for grupo in player_data.get('stats', []) or []:
-        if isinstance(grupo, dict) and grupo.get('key') == category_key:
-            for stat_nombre, stat_info in (grupo.get('stats') or {}).items():
-                if isinstance(stat_info, dict) and stat_info.get('key') == target_stat_key:
-                    valor = stat_info.get('stat', {}).get('value')
-                    return valor if valor is not None else default
-    return default
+        for stat_info in (grupo.get('stats') or {}).values() if isinstance(grupo, dict) else []:
+            if isinstance(stat_info, dict):
+                stats.setdefault(stat_info.get('key'), stat_info.get('stat') or {})
+    return stats
+
+
+def valor_stat(stats, clave, campo='value', faltante=0):
+    """FotMob no manda la estadística cuando vale 0: si el jugador tiene estadísticas, lo que falta es 0."""
+    stat = stats.get(clave)
+    if stat is None:
+        return faltante
+    valor = stat.get(campo)
+    return valor if valor is not None else faltante
+
+
+def stats_fotmob(player_data, stats):
+    """JSON con lo propio de FotMob: lo que no tiene columna ni se calcula con otras."""
+    propias = {}
+    for clave, stat in stats.items():
+        if clave in CLAVES_CON_COLUMNA or clave in CLAVES_DERIVADAS or 'value' not in stat:
+            continue
+        propias[clave] = [stat['value'], stat['total']] if 'total' in stat else stat['value']
+    if player_data.get('isPotm'):
+        propias['jugador_del_partido'] = True
+    return json.dumps(propias) if propias else None
+
+
+def tarjetas_por_jugador(eventos):
+    """(amarilla, roja) por jugador según los eventos (la doble amarilla cuenta en las dos). None si no hay eventos."""
+    if not eventos:
+        return None
+    tarjetas = {}
+    for ev in eventos:
+        if ev.get('type') != 'Card':
+            continue
+        j_id = (ev.get('player') or {}).get('id') or ev.get('playerId')
+        if not j_id:
+            continue
+        amarilla, roja = tarjetas.get(int(j_id), (False, False))
+        carta = ev.get('card')
+        tarjetas[int(j_id)] = (amarilla or carta in ('Yellow', 'YellowRed'), roja or carta in ('Red', 'YellowRed'))
+    return tarjetas
+
+
+COLUMNAS_INSERT_STATS = [
+    'minutos_jugados', 'rating', 'goles', 'asistencias', 'xg', 'xa', 'tarjeta_amarilla', 'tarjeta_roja', 'tiros',
+    *(c for c, _, _ in COLUMNAS_STATS), *(c for c, _, _ in COLUMNAS_ARQUERO), 'fotmob',
+]
+SQL_STATS = text(f"""
+    INSERT INTO stats_jugador_partido (partido_id, jugador_id, equipo_id, {', '.join(COLUMNAS_INSERT_STATS)})
+    VALUES (:partido_id, :jugador_id, :equipo_id, {', '.join(':' + c for c in COLUMNAS_INSERT_STATS)})
+    ON CONFLICT (partido_id, jugador_id) DO UPDATE SET
+        {', '.join(f'{c} = EXCLUDED.{c}' for c in COLUMNAS_INSERT_STATS)}
+""")
+
+
+def fila_stats(partido_id, jugador_id, p_data, tarjetas):
+    stats = stats_por_clave(p_data)
+    arquero = bool(p_data.get('isGoalkeeper'))
+    # Total de tiros: a veces no viene total_shots, pero siempre es al arco + afuera + bloqueados
+    tiros = valor_stat(stats, 'total_shots', faltante=None)
+    if tiros is None:
+        tiros = sum(valor_stat(stats, k) for k in ('ShotsOnTarget', 'ShotsOffTarget', 'blocked_shots'))
+    amarilla, roja = (None, None) if tarjetas is None else tarjetas.get(jugador_id, (False, False))
+    fila = {
+        'partido_id': partido_id, 'jugador_id': jugador_id, 'equipo_id': p_data.get('teamId'),
+        'minutos_jugados': valor_stat(stats, 'minutes_played'),
+        'rating': valor_stat(stats, 'rating_title', faltante=None),
+        'goles': valor_stat(stats, 'goals'),
+        'asistencias': valor_stat(stats, 'assists'),
+        'xg': valor_stat(stats, 'expected_goals', faltante=0.0),
+        'xa': valor_stat(stats, 'expected_assists', faltante=0.0),
+        'tarjeta_amarilla': amarilla, 'tarjeta_roja': roja, 'tiros': tiros,
+        'fotmob': stats_fotmob(p_data, stats),
+    }
+    fila.update({c: valor_stat(stats, k, campo) for c, k, campo in COLUMNAS_STATS})
+    fila.update({c: valor_stat(stats, k, campo) if arquero else None for c, k, campo in COLUMNAS_ARQUERO})
+    return fila
 
 def extraer_nombre(obj_name):
     """Maneja inconsistencias: a veces es string, a veces diccionario"""
@@ -226,34 +362,16 @@ def procesar_partidos(conn, carpeta_matches):
                 "pl": penales_loc, "pv": penales_vis, "est": status.get('reason', {}).get('short', 'N/A'),
                 "meta": metadata_json
             })
+            eventos = match_facts.get('events', {}).get('events', []) if isinstance(match_facts.get('events'), dict) else []
+            tarjetas = tarjetas_por_jugador(eventos)
+
             player_stats = content.get('playerStats') or {}
             for p_id_str, p_data in player_stats.items():
                 try: jugador_id = int(p_id_str)
                 except ValueError: continue
                 nombre_jugador = extraer_nombre(p_data.get('name'))
                 upsert_jugador(conn, jugador_id, nombre_jugador)
-                conn.execute(text("""
-                    INSERT INTO stats_jugador_partido (
-                        partido_id, jugador_id, equipo_id, minutos_jugados, rating, 
-                        goles, asistencias, xg, xa, tarjeta_amarilla, tarjeta_roja
-                    ) VALUES (
-                        :pid, :jid, :eqid, :min, :rat, :gol, :ast, :xg, :xa, :ta, :tr
-                    ) ON CONFLICT (partido_id, jugador_id) DO UPDATE SET
-                        minutos_jugados = EXCLUDED.minutos_jugados, rating = EXCLUDED.rating,
-                        goles = EXCLUDED.goles, asistencias = EXCLUDED.asistencias,
-                        xg = EXCLUDED.xg, xa = EXCLUDED.xa, 
-                        tarjeta_amarilla = EXCLUDED.tarjeta_amarilla, tarjeta_roja = EXCLUDED.tarjeta_roja
-                """), {
-                    "pid": partido_id, "jid": jugador_id, "eqid": p_data.get('teamId'),
-                    "min": obtener_stat(p_data, 'top_stats', 'minutes_played', 0),
-                    "rat": obtener_stat(p_data, 'top_stats', 'rating_title', None),
-                    "gol": obtener_stat(p_data, 'top_stats', 'goals', 0),
-                    "ast": obtener_stat(p_data, 'top_stats', 'assists', 0),
-                    "xg": obtener_stat(p_data, 'top_stats', 'expected_goals', 0.0),
-                    "xa": obtener_stat(p_data, 'top_stats', 'expected_assists', 0.0),
-                    "ta": obtener_stat(p_data, 'discipline', 'yellow_cards', 0) > 0,
-                    "tr": obtener_stat(p_data, 'discipline', 'red_cards', 0) > 0
-                })
+                conn.execute(SQL_STATS, fila_stats(partido_id, jugador_id, p_data, tarjetas))
 
             # (equipo_id, jugador, es_titular). FotMob tiene dos formatos de lineup:
             # el viejo (lineup.lineup[].players/bench) y el actual (homeTeam/awayTeam con starters/subs).
@@ -281,10 +399,17 @@ def procesar_partidos(conn, carpeta_matches):
                 """), {"pid": partido_id, "eqid": t_id, "jid": j_id, "tit": es_titular, "dorsal": p.get('shirtNumber'),
                        "pos": str(posicion) if posicion is not None else None})
 
-            eventos = match_facts.get('events', {}).get('events', []) if isinstance(match_facts.get('events'), dict) else []
+            # Desde el Clausura 2026 FotMob manda eventId 0 en goles y tarjetas: se les
+            # da un ID negativo estable por partido (no choca con los de FotMob) y se
+            # rehacen en cada carga para no duplicarlos si cambia la lista
+            conn.execute(text("DELETE FROM eventos WHERE evento_id < 0 AND partido_id = :pid"), {"pid": partido_id})
+            sinteticos = 0
             for ev in eventos:
                 ev_id = ev.get('eventId')
-                if not ev_id: continue 
+                if not ev_id:
+                    if ev.get('type') not in ('Goal', 'Card', 'MissedPenalty'): continue
+                    sinteticos += 1
+                    ev_id = -(partido_id * 1000 + sinteticos)
                 # FotMob manda id 0 cuando no sabe quién fue (pasa en el ascenso): queda en NULL
                 j_id = (ev.get('player') or {}).get('id') or None
                 if j_id: upsert_jugador(conn, j_id, extraer_nombre((ev.get('player') or {}).get('name')))
@@ -297,7 +422,8 @@ def procesar_partidos(conn, carpeta_matches):
                     "eqid": loc_id if ev.get('isHome') else vis_id,
                     "jid": j_id, "min": ev.get('time'),
                     "tipo": ev.get('type'),
-                    "det": ev.get('card') or ev.get('goalDescription')
+                    # En el formato nuevo el gol en contra viene aparte (ownGoal), no en goalDescription
+                    "det": ev.get('card') or ev.get('goalDescription') or ('Own goal' if ev.get('ownGoal') in (True, 'True', 'true') else None)
                 })
 
             tiros = (content.get('shotmap') or {}).get('shots', [])
@@ -307,14 +433,14 @@ def procesar_partidos(conn, carpeta_matches):
                 j_id = t.get('playerId') or None
                 if j_id: upsert_jugador(conn, j_id, t.get('playerName', 'Desc'))
                 conn.execute(text("""
-                    INSERT INTO tiros (tiro_id, partido_id, equipo_id, jugador_id, minuto, x, y, xg, xgot, tipo_tiro, resultado)
-                    VALUES (:tid, :pid, :eqid, :jid, :min, :x, :y, :xg, :xgot, :tipo, :res)
-                    ON CONFLICT (tiro_id) DO NOTHING
+                    INSERT INTO tiros (tiro_id, partido_id, equipo_id, jugador_id, minuto, x, y, xg, xgot, tipo_tiro, resultado, situacion)
+                    VALUES (:tid, :pid, :eqid, :jid, :min, :x, :y, :xg, :xgot, :tipo, :res, :sit)
+                    ON CONFLICT (tiro_id) DO UPDATE SET situacion = EXCLUDED.situacion
                 """), {
                     "tid": t_id, "pid": partido_id, "eqid": t.get('teamId'), "jid": j_id,
                     "min": t.get('min'), "x": t.get('x'), "y": t.get('y'),
                     "xg": t.get('expectedGoals'), "xgot": t.get('expectedGoalsOnTarget'),
-                    "tipo": t.get('shotType'), "res": t.get('eventType')
+                    "tipo": t.get('shotType'), "res": t.get('eventType'), "sit": t.get('situation')
                 })
 
             momentum_data = (((match_facts.get('momentum') or {}).get('main') or {}).get('data') or [])
